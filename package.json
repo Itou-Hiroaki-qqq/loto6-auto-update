@@ -1,0 +1,29 @@
+{
+  "name": "loto6-auto-update",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Railway lightweight backend for Loto6 auto-update (Puppeteer scraper)",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.0.2",
+    "@sparticuz/chromium": "^143.0.4",
+    "cheerio": "^1.1.2",
+    "next": "16.1.3",
+    "puppeteer-core": "^24.35.0"
+  },
+  "devDependencies": {
+    "@types/cheerio": "^0.22.35",
+    "@types/node": "^20",
+    "@types/puppeteer-core": "^5.4.0",
+    "@types/react": "19.2.8",
+    "puppeteer": "^24.35.0",
+    "typescript": "^5"
+  }
+}
