@@ -1,8 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
-  // APIルートのみなので、最小限の設定
+  output: 'standalone', // Cloud Run 用 Docker イメージで使用
 };
 
 export default nextConfig;

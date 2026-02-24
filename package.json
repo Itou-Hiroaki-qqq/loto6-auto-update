@@ -2,7 +2,7 @@
   "name": "loto6-auto-update",
   "version": "0.1.0",
   "private": true,
-  "description": "Railway lightweight backend for Loto6 auto-update (Puppeteer scraper)",
+  "description": "Cloud Run lightweight backend for Loto6 auto-update (Puppeteer scraper)",
   "engines": {
     "node": ">=20.0.0"
   },

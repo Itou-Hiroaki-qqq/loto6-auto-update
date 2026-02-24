@@ -1,0 +1,25 @@
+# Dependencies and build output
+node_modules
+.next
+out
+*.tsbuildinfo
+next-env.d.ts
+
+# Git and env
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+
+# Docs and dev
+README.md
+PROJECT_SETUP.md
+*.md
+Dockerfile
+.dockerignore
+
+# Misc
+.DS_Store
+coverage
+.vercel

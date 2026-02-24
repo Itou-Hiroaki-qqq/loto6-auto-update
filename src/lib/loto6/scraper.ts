@@ -2,15 +2,14 @@ import * as cheerio from 'cheerio'
 import puppeteerCore from 'puppeteer-core'
 import chromium from '@sparticuz/chromium'
 
-// ローカル環境では通常のpuppeteerを使用（テストアプリの成功パターン）
-// 本番環境（Railway）ではpuppeteer-coreを使用
+// ローカル: 通常のpuppeteer / Railway: puppeteer-core + @sparticuz/chromium / Cloud Run: puppeteer-core + システム Chromium
 let puppeteerInstance: typeof puppeteerCore
 async function getPuppeteer() {
     if (!puppeteerInstance) {
         const isRailway = process.env.RAILWAY_ENVIRONMENT !== undefined || process.env.RAILWAY_ENVIRONMENT_NAME !== undefined
-        
-        if (isRailway) {
-            // 本番環境（Railway）ではpuppeteer-coreを使用
+        const isCloudRun = process.env.K_SERVICE !== undefined
+
+        if (isCloudRun || isRailway) {
             puppeteerInstance = puppeteerCore
         } else {
             // ローカル環境では通常のpuppeteerを使用（動的インポート）
@@ -126,51 +125,50 @@ export async function scrapeWinningNumbersWithPuppeteer(url: string): Promise<Sc
         
         // 環境判定
         const isRailway = process.env.RAILWAY_ENVIRONMENT !== undefined || process.env.RAILWAY_ENVIRONMENT_NAME !== undefined
-        
-        console.log(`[Puppeteer Scraper] Environment: ${isRailway ? 'Railway' : 'Local'}`)
-        
+        const isCloudRun = process.env.K_SERVICE !== undefined
+
+        console.log(`[Puppeteer Scraper] Environment: ${isCloudRun ? 'Cloud Run' : isRailway ? 'Railway' : 'Local'}`)
+
         // ブラウザの起動設定
         let executablePath: string | undefined = undefined
-        
-        // Railway環境の場合
-        if (isRailway) {
+
+        // Cloud Run: コンテナ内のシステム Chromium を使用
+        if (isCloudRun) {
+            executablePath = process.env.CHROMIUM_EXECUTABLE_PATH || '/usr/bin/chromium'
+            console.log(`[Puppeteer Scraper] Using system Chromium: ${executablePath}`)
+        }
+        // Railway環境: @sparticuz/chromium または環境変数
+        else if (isRailway) {
             try {
-                // 環境変数で外部バイナリのURLが指定されている場合はそれを使用
                 const remoteExecPath = process.env.CHROMIUM_REMOTE_EXEC_PATH
-                
                 if (remoteExecPath) {
                     console.log(`[Puppeteer Scraper] Using remote Chromium from: ${remoteExecPath}`)
                     executablePath = await chromium.executablePath(remoteExecPath)
                 } else {
-                    // デフォルトの方法でパスを取得
                     executablePath = await chromium.executablePath()
                 }
-                
+                if (!executablePath) throw new Error('Chromium executable path is empty')
                 console.log(`[Puppeteer Scraper] Chromium executable path: ${executablePath}`)
-                
-                // パスが存在するか確認
-                if (!executablePath) {
-                    throw new Error('Chromium executable path is empty')
-                }
             } catch (error) {
                 console.error(`[Puppeteer Scraper] Error getting executable path:`, error)
-                // フォールバック: 環境変数から直接パスを取得
                 executablePath = process.env.CHROMIUM_EXECUTABLE_PATH
                 if (!executablePath) {
-                    console.error(`[Puppeteer Scraper] CHROMIUM_EXECUTABLE_PATH not set`)
-                    throw new Error(`Chromium executable path could not be determined. Error: ${error instanceof Error ? error.message : String(error)}. Please set CHROMIUM_REMOTE_EXEC_PATH or CHROMIUM_EXECUTABLE_PATH environment variable.`)
+                    throw new Error(`Chromium executable path could not be determined. Set CHROMIUM_REMOTE_EXEC_PATH or CHROMIUM_EXECUTABLE_PATH.`)
                 }
             }
         }
-        
+
+        const isContainer = isCloudRun || isRailway
         const launchOptions: any = {
-            args: isRailway ? [
-                ...chromium.args,
+            args: isContainer ? [
+                ...(isCloudRun ? [] : chromium.args),
                 '--disable-gpu',
                 '--disable-dev-shm-usage',
                 '--disable-setuid-sandbox',
                 '--no-sandbox',
                 '--single-process',
+                '--no-zygote',
+                '--disable-software-rasterizer',
             ] : [],
             defaultViewport: { width: 1920, height: 1080 },
             executablePath: executablePath,

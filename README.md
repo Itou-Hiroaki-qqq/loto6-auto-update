@@ -1,6 +1,6 @@
-# Loto6 Auto Update (Railway Backend)
+# Loto6 Auto Update (Cloud Run)
 
-ロト6の最新当選番号を自動取得してデータベースに格納する、Railway専用の軽量バックエンドプロジェクトです。
+ロト6の最新当選番号を自動取得してデータベースに格納する、Google Cloud Run 向けの軽量バックエンドプロジェクトです。
 
 ## 概要
 
@@ -17,7 +17,7 @@
 
 ```
 ┌─────────────────────────────────────────┐
-│  Railway (loto6-auto-update)           │
+│  Google Cloud Run (loto6-auto-update)   │
 │  └─ /api/loto6/auto-update             │
 │     └─ Puppeteerスクレイピング           │
 │        └─ Neon DBに格納                 │
@@ -36,50 +36,17 @@
 
 ## セットアップ
 
-### 1. 必要な環境変数
+**Cloud Run へのデプロイ手順は [CLOUD_RUN_SETUP.md](./CLOUD_RUN_SETUP.md) を参照してください。** ワンステップずつ記載しています。
 
-Railwayダッシュボードで以下の環境変数を設定してください：
+### 必要な環境変数（Cloud Run で設定）
 
 ```env
 # 必須
 DATABASE_URL=your_neon_database_connection_string
 AUTO_UPDATE_API_KEY=your-secure-random-api-key
-
-# 推奨（Puppeteer使用時）
-CHROMIUM_REMOTE_EXEC_PATH=https://github.com/Sparticuz/chromium/releases/download/v143.0.0/chromium-v143.0.0-pack.tar.br
 ```
 
-### 2. APIキーの生成
-
-強力なランダムなAPIキーを生成してください：
-
-```bash
-# Mac/Linux
-openssl rand -hex 32
-
-# Windows (PowerShell)
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-```
-
-### 3. Railwayへのデプロイ
-
-1. [Railwayダッシュボード](https://railway.app/dashboard)にログイン
-2. **New Project** → **Deploy from GitHub repo** を選択
-3. このリポジトリを選択
-4. 環境変数を設定（上記参照）
-5. デプロイを待つ
-
-### 4. cron.job.orgの設定
-
-1. [cron.job.org](https://cron-job.org/)にログイン
-2. **Create cronjob** をクリック
-3. 以下の設定を入力：
-   - **Title**: Loto6 Auto Update
-   - **URL**: `https://[your-railway-url]/api/loto6/auto-update?apiKey=[YOUR_API_KEY]`
-   - **Schedule**: `0 9 * * 2,5`（毎週火曜と金曜の9時）
-   - **Method**: GET
-   - **Enable job**: ✅ チェックを入れる
-4. **Create cronjob** をクリック
+（Cloud Run ではコンテナ内に Chromium を含むため、`CHROMIUM_REMOTE_EXEC_PATH` は不要です。）
 
 ## プロジェクト構造
 
@@ -125,12 +92,12 @@ npm run dev
 http://localhost:3000/api/loto6/auto-update?apiKey=YOUR_API_KEY
 ```
 
-### Railwayでのテスト
+### Cloud Run でのテスト
 
 デプロイ後、以下のURLで動作確認：
 
 ```
-https://[your-railway-url]/api/loto6/auto-update?apiKey=YOUR_API_KEY
+https://[your-cloud-run-url]/api/loto6/auto-update?apiKey=YOUR_API_KEY
 ```
 
 **期待されるレスポンス：**
@@ -149,12 +116,11 @@ https://[your-railway-url]/api/loto6/auto-update?apiKey=YOUR_API_KEY
 
 ### コスト最適化
 
-このプロジェクトは軽量に設計されており、Railwayの無料枠内で動作することを想定しています：
+このプロジェクトは軽量に設計されており、Cloud Run の無料枠内で動作することを想定しています：
 
 - ✅ フロントエンド不要（APIルートのみ）
-- ✅ 最小限の依存関係
-- ✅ 必要時のみ実行（cronスケジュール）
-- ✅ Puppeteerは必要な時だけ起動
+- ✅ 必要時のみ実行（cronスケジュール・週2回）で従量課金が抑えられる
+- ✅ Puppeteerはリクエスト時のみ起動
 
 ### データベース
 
@@ -176,13 +142,13 @@ CREATE TABLE IF NOT EXISTS winning_numbers (
 
 ## トラブルシューティング
 
-### Chromiumのエラー
+### Chromiumのエラー（Cloud Run）
 
-エラー: `Chromium executable path could not be determined`
+エラー: Chromium が起動しない
 
 **解決策**: 
-- `CHROMIUM_REMOTE_EXEC_PATH`環境変数を設定
-- または、最新のURLを確認: https://github.com/Sparticuz/chromium/releases
+- Cloud Run の Docker イメージにはシステム Chromium が含まれています。メモリを 1GB 以上に設定してください。
+- ローカルや Railway 利用時は `CHROMIUM_REMOTE_EXEC_PATH` 等を設定してください。
 
 ### データベース接続エラー
 

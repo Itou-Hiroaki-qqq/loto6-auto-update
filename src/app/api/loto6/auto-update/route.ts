@@ -6,9 +6,8 @@ import { scrapeWinningNumbersWithPuppeteer } from '@/lib/loto6/scraper'
  * 自動更新用APIエンドポイント
  * cron.job.orgから呼び出される
  * APIキー認証が必要
- * 
- * Railway専用の軽量バックエンドプロジェクト
- * このプロジェクトは自動更新機能のみを提供します
+ *
+ * Cloud Run 向け軽量バックエンド（自動更新機能のみ提供）
  */
 export async function GET(request: NextRequest) {
     try {
@@ -34,10 +33,9 @@ export async function GET(request: NextRequest) {
         
         console.log('[Auto Update] Starting automatic update...')
         
-        // 最新の当選番号をスクレイピング
-        // Railway環境ではPuppeteerを直接使用（動作しやすい）
+        // 最新の当選番号をスクレイピング（Puppeteer）
         const url = 'https://www.mizuhobank.co.jp/takarakuji/check/loto/loto6/index.html'
-        console.log('[Auto Update] Railway environment detected, using Puppeteer...')
+        console.log('[Auto Update] Starting scrape with Puppeteer...')
         const results = await scrapeWinningNumbersWithPuppeteer(url)
         
         if (results.length === 0) {
