@@ -86,18 +86,18 @@ npm install
 npm run dev
 ```
 
-ブラウザで以下のURLにアクセス：
+以下のURLに `x-api-key` ヘッダーを付けてリクエストを送る（ブラウザではなく curl 等で確認）：
 
-```
-http://localhost:3000/api/loto6/auto-update?apiKey=YOUR_API_KEY
+```bash
+curl -H "x-api-key: YOUR_API_KEY" http://localhost:3000/api/loto6/auto-update
 ```
 
 ### Cloud Run でのテスト
 
-デプロイ後、以下のURLで動作確認：
+デプロイ後、`x-api-key` ヘッダーを付けてリクエストを送る：
 
-```
-https://[your-cloud-run-url]/api/loto6/auto-update?apiKey=YOUR_API_KEY
+```bash
+curl -H "x-api-key: YOUR_API_KEY" https://[your-cloud-run-url]/api/loto6/auto-update
 ```
 
 **期待されるレスポンス：**
@@ -163,8 +163,9 @@ CREATE TABLE IF NOT EXISTS winning_numbers (
 エラー: `Unauthorized`
 
 **解決策**:
-- `AUTO_UPDATE_API_KEY`環境変数が設定されているか確認
-- cron.job.orgのURLに正しいAPIキーが含まれているか確認
+- `AUTO_UPDATE_API_KEY` 環境変数が Cloud Run に設定されているか確認
+- cron.job.org の Headers に `x-api-key: YOUR_API_KEY` が設定されているか確認
+- URLに `?apiKey=` を含めても認証されない（ヘッダーのみ有効）
 
 ## 関連プロジェクト
 

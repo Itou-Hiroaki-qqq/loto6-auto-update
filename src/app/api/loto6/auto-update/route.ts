@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { sql } from '@/lib/neon'
+import { sql, assertDatabaseUrl } from '@/lib/neon'
 import { scrapeWinningNumbersWithPuppeteer } from '@/lib/loto6/scraper'
 
 /**
@@ -11,8 +11,11 @@ import { scrapeWinningNumbersWithPuppeteer } from '@/lib/loto6/scraper'
  */
 export async function GET(request: NextRequest) {
     try {
-        // APIキー認証
-        const apiKey = request.headers.get('x-api-key') || request.nextUrl.searchParams.get('apiKey')
+        // DB接続チェック（未設定なら即座にエラー）
+        assertDatabaseUrl()
+
+        // APIキー認証（x-api-key ヘッダーのみ受け付ける）
+        const apiKey = request.headers.get('x-api-key')
         const expectedApiKey = process.env.AUTO_UPDATE_API_KEY
         
         if (!expectedApiKey) {
@@ -55,35 +58,24 @@ export async function GET(request: NextRequest) {
             
             try {
                 // PostgreSQLのUPSERT（既存データは更新、新規データは挿入）
+                // xmax = 0 なら新規INSERT、それ以外はUPDATE
                 const insertResult = await sql`
                     INSERT INTO winning_numbers (draw_date, main_numbers, bonus_number, draw_number, created_at, updated_at)
                     VALUES (${result.drawDate}::date, ${numbersString}::integer[], ${result.bonusNumber}, ${result.drawNumber || null}, NOW(), NOW())
-                    ON CONFLICT (draw_date) 
+                    ON CONFLICT (draw_date)
                     DO UPDATE SET
                         main_numbers = EXCLUDED.main_numbers,
                         bonus_number = EXCLUDED.bonus_number,
                         draw_number = EXCLUDED.draw_number,
                         updated_at = NOW()
-                    RETURNING draw_date
+                    RETURNING draw_date, (xmax = 0) AS is_inserted
                 `
-                
+
                 if (Array.isArray(insertResult) && insertResult.length > 0) {
-                    // 既存データかどうかを確認（updated_atがcreated_atと同じなら新規）
-                    const existing = await sql`
-                        SELECT created_at, updated_at 
-                        FROM winning_numbers 
-                        WHERE draw_date = ${result.drawDate}::date
-                    `
-                    
-                    if (existing.length > 0) {
-                        const createdAt = new Date(existing[0].created_at)
-                        const updatedAt = new Date(existing[0].updated_at)
-                        // 1秒以内の差なら新規データとみなす
-                        if (Math.abs(updatedAt.getTime() - createdAt.getTime()) < 1000) {
-                            savedCount++
-                        } else {
-                            skippedCount++
-                        }
+                    if (insertResult[0].is_inserted) {
+                        savedCount++
+                    } else {
+                        skippedCount++
                     }
                 }
             } catch (error) {

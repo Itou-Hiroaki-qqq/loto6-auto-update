@@ -19,9 +19,7 @@
     "puppeteer-core": "^24.35.0"
   },
   "devDependencies": {
-    "@types/cheerio": "^0.22.35",
     "@types/node": "^20",
-    "@types/puppeteer-core": "^5.4.0",
     "@types/react": "19.2.8",
     "puppeteer": "^24.35.0",
     "typescript": "^5"

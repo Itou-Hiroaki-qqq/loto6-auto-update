@@ -1,12 +1,18 @@
 import { neon } from '@neondatabase/serverless'
 
-// ビルド時にはエラーを出さず、実行時にチェックする
-// RailwayやVercelでは、ビルド時に環境変数が設定されていない場合があるため
-// ビルド時はダミーURLを使用（実際には使用されない）
-// 実行時には環境変数が設定されている必要がある
+// ビルド時には環境変数が未設定の場合があるため、ダミーURLでインスタンスを生成する。
+// 実際のクエリ実行前に DATABASE_URL の存在チェックを行うこと。
 const databaseUrl = process.env.DATABASE_URL || 'postgresql://dummy:dummy@dummy:5432/dummy'
 
-const sql = neon(databaseUrl)
+export const sql = neon(databaseUrl)
 
-// 手動でクエリを実行するためのヘルパー
-export { sql }
+/**
+ * DATABASE_URL が設定されているか確認する。
+ * APIルートのリクエスト処理の先頭で呼び出すことで、
+ * 設定漏れを早期に検出できる。
+ */
+export function assertDatabaseUrl(): void {
+    if (!process.env.DATABASE_URL) {
+        throw new Error('DATABASE_URL is not set in environment variables')
+    }
+}

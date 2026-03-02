@@ -1,22 +1,25 @@
 import * as cheerio from 'cheerio'
-import puppeteerCore from 'puppeteer-core'
+import type { AnyNode, Element } from 'domhandler'
+import puppeteerCore, { Browser, LaunchOptions } from 'puppeteer-core'
 import chromium from '@sparticuz/chromium'
 
-// ローカル: 通常のpuppeteer / Railway: puppeteer-core + @sparticuz/chromium / Cloud Run: puppeteer-core + システム Chromium
-let puppeteerInstance: typeof puppeteerCore
-async function getPuppeteer() {
-    if (!puppeteerInstance) {
-        const isRailway = process.env.RAILWAY_ENVIRONMENT !== undefined || process.env.RAILWAY_ENVIRONMENT_NAME !== undefined
-        const isCloudRun = process.env.K_SERVICE !== undefined
+// 環境判定（モジュールレベルで一元管理）
+const IS_RAILWAY = process.env.RAILWAY_ENVIRONMENT !== undefined || process.env.RAILWAY_ENVIRONMENT_NAME !== undefined
+const IS_CLOUD_RUN = process.env.K_SERVICE !== undefined
+const IS_CONTAINER = IS_CLOUD_RUN || IS_RAILWAY
 
-        if (isCloudRun || isRailway) {
+// ローカル: 通常のpuppeteer / Railway: puppeteer-core + @sparticuz/chromium / Cloud Run: puppeteer-core + システム Chromium
+let puppeteerInstance: typeof puppeteerCore | null = null
+async function getPuppeteer(): Promise<typeof puppeteerCore> {
+    if (!puppeteerInstance) {
+        if (IS_CONTAINER) {
             puppeteerInstance = puppeteerCore
         } else {
             // ローカル環境では通常のpuppeteerを使用（動的インポート）
             try {
                 const puppeteerLocal = await import('puppeteer')
-                puppeteerInstance = puppeteerLocal.default || puppeteerLocal as any
-            } catch (e) {
+                puppeteerInstance = (puppeteerLocal.default || puppeteerLocal) as typeof puppeteerCore
+            } catch {
                 // puppeteerが見つからない場合はpuppeteer-coreを使用
                 console.warn('[Scraper] puppeteer not found, falling back to puppeteer-core')
                 puppeteerInstance = puppeteerCore
@@ -40,13 +43,17 @@ export interface ScrapedWinningNumbers {
  * @param tableIndex テーブルのインデックス（デバッグ用）
  * @returns 抽出された当選番号データの配列
  */
-function extractDataFromTable($: any, $table: any, tableIndex: number): ScrapedWinningNumbers[] {
+function extractDataFromTable(
+    $: cheerio.CheerioAPI,
+    $table: cheerio.Cheerio<AnyNode>,
+    tableIndex: number
+): ScrapedWinningNumbers[] {
     const results: ScrapedWinningNumbers[] = []
-    
+
     try {
         // 抽選日を取得（テストアプリの成功パターン）
         const dateText = $table.find('.js-lottery-date-pc').first().text().trim()
-        
+
         let drawDate = ''
         if (dateText) {
             // 2026年1月5日 -> 2026-01-05
@@ -56,7 +63,7 @@ function extractDataFromTable($: any, $table: any, tableIndex: number): ScrapedW
                 drawDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
             }
         }
-        
+
         // 回号を取得（テストアプリの成功パターン）
         const issueText = $table.find('.js-lottery-issue-pc').first().text().trim()
         let drawNumber: number | undefined
@@ -66,47 +73,47 @@ function extractDataFromTable($: any, $table: any, tableIndex: number): ScrapedW
                 drawNumber = parseInt(drawMatch[1], 10)
             }
         }
-        
+
         // 本数字を取得（テストアプリの成功パターン）
         const numbers: number[] = []
-        $table.find('.js-lottery-number-pc').each((_: number, elem: cheerio.Element) => {
+        $table.find('.js-lottery-number-pc').each((_: number, elem: Element) => {
             const numText = $(elem).text().trim()
             const num = parseInt(numText, 10)
             if (!isNaN(num) && num >= 1 && num <= 43) {
                 numbers.push(num)
             }
         })
-        
+
         // ボーナス数字を取得（テストアプリの成功パターン）
         const bonusText = $table.find('.js-lottery-bonus-pc').first().text().trim()
         // ボーナス数字は "(04)" のような形式なので、括弧を除去して数値に変換
         const bonusMatch = bonusText.match(/\((\d+)\)/)
         const bonusNumber = bonusMatch ? parseInt(bonusMatch[1], 10) : parseInt(bonusText.replace(/[()]/g, ''), 10)
-        
+
         // データの検証
         if (!dateText || numbers.length !== 6 || isNaN(bonusNumber)) {
             console.warn(`[Puppeteer Scraper] Table ${tableIndex}: Invalid data - date: "${dateText}", numbers: ${numbers.length}, bonus: ${bonusNumber}`)
             return results
         }
-        
+
         if (!drawDate) {
             drawDate = new Date().toISOString().split('T')[0]
             console.warn(`[Puppeteer Scraper] Table ${tableIndex}: date not found, using current date`)
         }
-        
+
         results.push({
             drawDate,
             mainNumbers: numbers.sort((a, b) => a - b),
             bonusNumber,
             drawNumber,
         })
-        
+
         console.log(`[Puppeteer Scraper] ✓ Table ${tableIndex}: ${drawDate} (回号: ${drawNumber || 'N/A'}), 本数字: [${numbers.join(',')}], ボーナス: ${bonusNumber}`)
-        
+
     } catch (error) {
         console.error(`[Puppeteer Scraper] Error processing table ${tableIndex}:`, error)
     }
-    
+
     return results
 }
 
@@ -118,27 +125,22 @@ function extractDataFromTable($: any, $table: any, tableIndex: number): ScrapedW
  * @returns 当選番号の配列
  */
 export async function scrapeWinningNumbersWithPuppeteer(url: string): Promise<ScrapedWinningNumbers[]> {
-    let browser: any = null
-    
+    let browser: Browser | null = null
+
     try {
         console.log(`[Puppeteer Scraper] Fetching URL: ${url}`)
-        
-        // 環境判定
-        const isRailway = process.env.RAILWAY_ENVIRONMENT !== undefined || process.env.RAILWAY_ENVIRONMENT_NAME !== undefined
-        const isCloudRun = process.env.K_SERVICE !== undefined
-
-        console.log(`[Puppeteer Scraper] Environment: ${isCloudRun ? 'Cloud Run' : isRailway ? 'Railway' : 'Local'}`)
+        console.log(`[Puppeteer Scraper] Environment: ${IS_CLOUD_RUN ? 'Cloud Run' : IS_RAILWAY ? 'Railway' : 'Local'}`)
 
         // ブラウザの起動設定
         let executablePath: string | undefined = undefined
 
         // Cloud Run: コンテナ内のシステム Chromium を使用
-        if (isCloudRun) {
+        if (IS_CLOUD_RUN) {
             executablePath = process.env.CHROMIUM_EXECUTABLE_PATH || '/usr/bin/chromium'
             console.log(`[Puppeteer Scraper] Using system Chromium: ${executablePath}`)
         }
         // Railway環境: @sparticuz/chromium または環境変数
-        else if (isRailway) {
+        else if (IS_RAILWAY) {
             try {
                 const remoteExecPath = process.env.CHROMIUM_REMOTE_EXEC_PATH
                 if (remoteExecPath) {
@@ -158,10 +160,9 @@ export async function scrapeWinningNumbersWithPuppeteer(url: string): Promise<Sc
             }
         }
 
-        const isContainer = isCloudRun || isRailway
-        const launchOptions: any = {
-            args: isContainer ? [
-                ...(isCloudRun ? [] : chromium.args),
+        const launchOptions: LaunchOptions = {
+            args: IS_CONTAINER ? [
+                ...(IS_CLOUD_RUN ? [] : chromium.args),
                 '--disable-gpu',
                 '--disable-dev-shm-usage',
                 '--disable-setuid-sandbox',
@@ -171,51 +172,50 @@ export async function scrapeWinningNumbersWithPuppeteer(url: string): Promise<Sc
                 '--disable-software-rasterizer',
             ] : [],
             defaultViewport: { width: 1920, height: 1080 },
-            executablePath: executablePath,
+            executablePath,
             headless: true,
-            ignoreHTTPSErrors: true,
         }
-        
+
         console.log(`[Puppeteer Scraper] Launching browser with options:`, {
             ...launchOptions,
             executablePath: executablePath ? 'set' : 'undefined',
-            argsCount: launchOptions.args.length,
+            argsCount: launchOptions.args?.length ?? 0,
         })
-        
+
         // 環境に応じて適切なpuppeteerインスタンスを取得
         const puppeteer = await getPuppeteer()
         browser = await puppeteer.launch(launchOptions)
         const page = await browser.newPage()
-        
+
         // User-Agentを設定
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
-        
+
         // ページにアクセス（テストアプリの成功パターン）
         await page.goto(url, {
             waitUntil: 'networkidle2',
             timeout: 30000,
         })
-        
+
         // JavaScript実行を待つ（テストアプリの成功パターン）
         try {
             await page.waitForSelector('.js-lottery-issue-pc, table, [class*="loto"]', { timeout: 10000 })
-        } catch (e) {
+        } catch {
             // セレクタが見つからない場合は5秒待機（テストアプリの成功パターン）
             console.log('[Puppeteer Scraper] Selector not found, waiting 5 seconds...')
-            await page.waitForTimeout(5000)
+            await new Promise((resolve) => setTimeout(resolve, 5000))
         }
-        
+
         // HTMLコンテンツを取得
         const html = await page.content()
         console.log(`[Puppeteer Scraper] HTML length: ${html.length} characters`)
-        
+
         // CheerioでHTMLをパース（テストアプリの成功パターンを適用）
         const $ = cheerio.load(html)
         const results: ScrapedWinningNumbers[] = []
-        
+
         // テストアプリの成功パターン：.js-lottery-issue-pcから.closest('table')で最初のテーブルを取得
         const issueElement = $('.js-lottery-issue-pc').first()
-        
+
         if (issueElement.length === 0) {
             console.warn('[Puppeteer Scraper] .js-lottery-issue-pc not found, trying fallback method...')
             // フォールバック：テーブルを直接探す
@@ -226,33 +226,33 @@ export async function scrapeWinningNumbersWithPuppeteer(url: string): Promise<Sc
                 return results
             }
             // 最初のテーブルを処理
-            const firstTable = $(tables[0])
+            const firstTable = $(tables[0]) as cheerio.Cheerio<AnyNode>
             return extractDataFromTable($, firstTable, 0)
         }
-        
+
         // 回別を取得
         const issueText = issueElement.text().trim()
         console.log(`[Puppeteer Scraper] Issue text: ${issueText}`)
-        
+
         // 回別を含むテーブルを取得（テストアプリの成功パターン）
         const firstTable = issueElement.closest('table')
-        
+
         if (firstTable.length === 0) {
             console.error('[Puppeteer Scraper] Table not found for .js-lottery-issue-pc')
             return results
         }
-        
+
         console.log(`[Puppeteer Scraper] Found table using .closest('table') method`)
-        
+
         // テーブルからデータを抽出（テストアプリの成功パターン）
         const extracted = extractDataFromTable($, firstTable, 0)
         if (extracted.length > 0) {
             results.push(...extracted)
         }
-        
+
         console.log(`[Puppeteer Scraper] Total results found: ${results.length} for ${url}`)
         return results
-        
+
     } catch (error) {
         console.error(`[Puppeteer Scraper] Error scraping ${url}:`, error)
         throw error
