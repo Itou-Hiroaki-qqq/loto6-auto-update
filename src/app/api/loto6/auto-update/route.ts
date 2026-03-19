@@ -83,18 +83,50 @@ export async function GET(request: NextRequest) {
             }
         }
         
-        const message = savedCount > 0 
+        const message = savedCount > 0
             ? `自動更新完了: 新規${savedCount}件、更新${skippedCount}件`
             : `自動更新完了: 更新${skippedCount}件（新規データなし）`
-        
+
         console.log(`[Auto Update] ${message}`)
-        
+
+        // Cloudflare Workers版（D1）にもデータを送信
+        let cloudflareSync = 'skipped'
+        const cloudflareUrl = process.env.CLOUDFLARE_APP_URL
+        const cloudflareApiKey = process.env.CLOUDFLARE_API_KEY
+        if (cloudflareUrl && cloudflareApiKey) {
+            try {
+                console.log(`[Auto Update] Syncing to Cloudflare: ${cloudflareUrl}/api/loto6/import`)
+                const syncResponse = await fetch(`${cloudflareUrl}/api/loto6/import`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-api-key': cloudflareApiKey,
+                    },
+                    body: JSON.stringify({ results }),
+                })
+                const syncData = await syncResponse.json()
+                if (syncResponse.ok && syncData.success) {
+                    cloudflareSync = `success: ${syncData.message}`
+                    console.log(`[Auto Update] Cloudflare sync: ${syncData.message}`)
+                } else {
+                    cloudflareSync = `failed: ${syncData.error || syncResponse.status}`
+                    console.error(`[Auto Update] Cloudflare sync failed:`, syncData)
+                }
+            } catch (error) {
+                cloudflareSync = `error: ${error instanceof Error ? error.message : 'Unknown'}`
+                console.error('[Auto Update] Cloudflare sync error:', error)
+            }
+        } else {
+            console.log('[Auto Update] Cloudflare sync skipped (CLOUDFLARE_APP_URL or CLOUDFLARE_API_KEY not set)')
+        }
+
         return NextResponse.json({
             success: true,
             message,
             count: savedCount,
             updated: skippedCount,
             total: results.length,
+            cloudflareSync,
         })
         
     } catch (error) {
