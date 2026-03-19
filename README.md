@@ -10,6 +10,7 @@
 
 - ✅ ロト6公式サイトから最新の当選番号をスクレイピング（Puppeteer使用）
 - ✅ Neonデータベースへの自動格納
+- ✅ Cloudflare Workers版アプリ（D1）へのデータ自動同期
 - ✅ cron.job.orgによるスケジュール実行（毎週火曜・金曜の朝）
 - ✅ APIキー認証によるセキュリティ
 
@@ -20,18 +21,19 @@
 │  Google Cloud Run (loto6-auto-update)   │
 │  └─ /api/loto6/auto-update             │
 │     └─ Puppeteerスクレイピング           │
-│        └─ Neon DBに格納                 │
+│        ├─ Neon DBに格納                 │
+│        └─ Cloudflare Workersに同期      │
 └─────────────────────────────────────────┘
-                  ↓ 共有
-┌─────────────────────────────────────────┐
-│  Neon PostgreSQL Database               │
-│  └─ winning_numbers テーブル             │
-└─────────────────────────────────────────┘
-                  ↑ 読み取り
-┌─────────────────────────────────────────┐
-│  Vercel (loto6-check)                  │
-│  └─ フロントエンド + その他API           │
-└─────────────────────────────────────────┘
+            ↓ 共有              ↓ POST同期
+┌──────────────────────┐  ┌──────────────────────────┐
+│  Neon PostgreSQL DB  │  │  Cloudflare Workers      │
+│  └─ winning_numbers  │  │  (loto6-check-cloudflare)│
+└──────────────────────┘  │  └─ D1 Database          │
+            ↑ 読み取り     └──────────────────────────┘
+┌──────────────────────┐
+│  Vercel (loto6-check)│
+│  └─ フロントエンド    │
+└──────────────────────┘
 ```
 
 ## セットアップ
@@ -44,9 +46,14 @@
 # 必須
 DATABASE_URL=your_neon_database_connection_string
 AUTO_UPDATE_API_KEY=your-secure-random-api-key
+
+# Cloudflare Workers連携（任意）
+CLOUDFLARE_APP_URL=https://your-cloudflare-workers-app.pages.dev
+CLOUDFLARE_API_KEY=your-cloudflare-api-key
 ```
 
-（Cloud Run ではコンテナ内に Chromium を含むため、`CHROMIUM_REMOTE_EXEC_PATH` は不要です。）
+- Cloud Runではコンテナー内にChromiumを含むため、`CHROMIUM_REMOTE_EXEC_PATH`は不要です。
+- `CLOUDFLARE_APP_URL`と`CLOUDFLARE_API_KEY`を設定すると、スクレイピング後にCloudflare Workers版アプリの`/api/loto6/import`にもデータを自動同期します。未設定の場合はスキップされます。
 
 ## プロジェクト構造
 
@@ -108,7 +115,8 @@ curl -H "x-api-key: YOUR_API_KEY" https://[your-cloud-run-url]/api/loto6/auto-up
   "message": "自動更新完了: 新規1件、更新0件",
   "count": 1,
   "updated": 0,
-  "total": 1
+  "total": 1,
+  "cloudflareSync": "success: 1件インポートしました"
 }
 ```
 
@@ -169,8 +177,9 @@ CREATE TABLE IF NOT EXISTS winning_numbers (
 
 ## 関連プロジェクト
 
-- **メインアプリ**: [loto6-check](../loto6-check) (Vercel)
-- **データベース**: Neon PostgreSQL（共有）
+- **メインアプリ**: [loto6-check](../loto6-check) (Vercel + Neon)
+- **Cloudflare版アプリ**: [loto6-check-cloudflare](../loto6-check-cloudflare) (Cloudflare Workers + D1)
+- **データベース**: Neon PostgreSQL（Vercel版と共有）、Cloudflare D1（Workers版）
 
 ## ライセンス
 
